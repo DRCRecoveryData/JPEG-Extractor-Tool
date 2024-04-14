@@ -6,7 +6,7 @@ def extract_jpeg_from_raw(raw_file_path, repaired_folder):
         raw_data = raw_file.read()
 
         # Assuming the JPEG data is between the markers b'\xff\xd8\xff' and b'\xff\xd9'
-        start_marker = b'\xff\xd8\xff'
+        start_marker = b'\xff\xd8\xff\xdb'
         end_marker = b'\xff\xd9'
 
         start_index = raw_data.rfind(start_marker)
