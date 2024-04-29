@@ -16,9 +16,12 @@ def extract_jpeg_from_raw(raw_file_path, repaired_folder):
             # Extract the JPEG data
             jpeg_data = raw_data[start_index:end_index + 2]
 
-            # Save the extracted JPEG data to a new file with the same name as RAW but with .JPG extension
-            raw_file_name, _ = os.path.splitext(os.path.splitext(os.path.basename(raw_file_path))[0])
-            jpeg_file_path = os.path.join(repaired_folder, raw_file_name + ".JPG")
+            # Extract base filename without the extension
+            raw_file_name, _ = os.path.splitext(os.path.basename(raw_file_path))
+            base_file_name = raw_file_name.split('.')[0]
+
+            # Save the extracted JPEG data to a new file with the same base name as RAW but with .JPG extension
+            jpeg_file_path = os.path.join(repaired_folder, base_file_name + ".JPG")
             with open(jpeg_file_path, 'wb') as jpeg_file:
                 jpeg_file.write(jpeg_data)
 
@@ -35,7 +38,8 @@ def extract_jpeg_files_parallel(raw_folder_path, repaired_folder):
     if not os.path.exists(repaired_folder):
         os.makedirs(repaired_folder)
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    max_workers = 4  # Adjust this value based on your system's resources
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Process each RAW file concurrently
         futures = [executor.submit(extract_jpeg_from_raw, raw_file, repaired_folder) for raw_file in files]
 
@@ -50,6 +54,3 @@ repaired_folder = "Repaired"
 
 # Call the function
 extract_jpeg_files_parallel(raw_folder_path, repaired_folder)
-
-
-#This code handles RAW files with various extensions (.arw, .cr2, .cr3, .nef, .jpg), and it should save the corresponding JPEG files with a ".JPG" extension in the "Repaired" folder.
