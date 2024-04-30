@@ -1,5 +1,7 @@
 # JPEG Extractor Tool
 
+![Screenshot from 2024-04-30 15-50-16](https://github.com/DRCRecoveryData/JPEG-Extractor-Tool/assets/85211068/66c47010-9590-4e91-a181-0c6c91f5af8b)
+
 This is a PyQt6 GUI application for extracting JPEG files from RAW image files.
 
 ## Features
