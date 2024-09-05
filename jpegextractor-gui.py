@@ -136,29 +136,66 @@ def extract_jpeg_from_raw(raw_file_path, repaired_folder):
     with open(raw_file_path, 'rb') as raw_file:
         raw_data = raw_file.read()
 
-        # Assuming the JPEG data is between the markers b'\xff\xd8\xff' and b'\xff\xd9'
-        start_marker = b'\xff\xd8\xff'
-        end_marker = b'\xff\xd9'
+    # Define JPEG markers
+    start_marker = b'\xff\xd8'
+    end_marker = b'\xff\xd9'
+    cr2_marker = b'\xff\xd8\xff\xc4'
 
-        start_index = raw_data.rfind(start_marker)
-        end_index = raw_data.rfind(end_marker)
+    # Find the position of the CR2 marker
+    cr2_marker_position = raw_data.rfind(cr2_marker)
 
-        if start_index != -1 and end_index != -1:
-            # Extract the JPEG data
-            jpeg_data = raw_data[start_index:end_index + 2]
+    # Find all start and end markers
+    start_positions = []
+    end_positions = []
 
-            # Extract base filename without the extension
-            raw_file_name, _ = os.path.splitext(os.path.basename(raw_file_path))
-            base_file_name = raw_file_name.split('.')[0]
+    pos = raw_data.find(start_marker)
+    while pos != -1:
+        start_positions.append(pos)
+        pos = raw_data.find(start_marker, pos + 2)
 
-            # Save the extracted JPEG data to a new file with the same base name as RAW but with .JPG extension
-            jpeg_file_path = os.path.join(repaired_folder, base_file_name + ".JPG")
-            with open(jpeg_file_path, 'wb') as jpeg_file:
-                jpeg_file.write(jpeg_data)
+    pos = raw_data.find(end_marker)
+    while pos != -1:
+        end_positions.append(pos + 2)  # Include end_marker length in position
+        pos = raw_data.find(end_marker, pos + 2)
 
-            print(f"JPEG data extracted from '{raw_file_path}' and saved to '{jpeg_file_path}'.")
-        else:
-            print(f"No JPEG data found in '{raw_file_path}'.")
+    if not start_positions or not end_positions:
+        print(f"No JPEG markers found in '{raw_file_path}'.")
+        return
+
+    # Use rfind to locate the last valid JPEG segment
+    last_start = None
+    last_end = None
+
+    for start_index in reversed(start_positions):
+        for end_index in reversed(end_positions):
+            if end_index > start_index:
+                if cr2_marker_position == -1 or end_index <= cr2_marker_position:
+                    last_start = start_index
+                    last_end = end_index
+                    break
+                elif end_index > cr2_marker_position:
+                    last_end = cr2_marker_position
+                    last_start = raw_data.rfind(start_marker, 0, cr2_marker_position)
+                    break
+        if last_start and last_end:
+            break
+
+    # Validate and extract data if both markers were found
+    if last_start is not None and last_end is not None:
+        # Extract the JPEG data
+        jpeg_data = raw_data[last_start:last_end]
+
+        # Define filename for the extracted JPEG
+        raw_file_name, _ = os.path.splitext(os.path.basename(raw_file_path))
+        base_file_name = raw_file_name.split('.')[0]
+        jpeg_file_path = os.path.join(repaired_folder, f"{base_file_name}.JPG")
+
+        with open(jpeg_file_path, 'wb') as jpeg_file:
+            jpeg_file.write(jpeg_data)
+
+        print(f"JPEG data extracted from '{raw_file_path}' and saved to '{jpeg_file_path}'.")
+    else:
+        print(f"No valid JPEG data found in '{raw_file_path}'.")
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
