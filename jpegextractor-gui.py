@@ -136,13 +136,22 @@ def extract_jpeg_from_raw(raw_file_path, repaired_folder):
     with open(raw_file_path, 'rb') as raw_file:
         raw_data = raw_file.read()
 
-    # Define JPEG markers
+    # Define markers for CR2 and NEF
     start_marker = b'\xff\xd8'
     end_marker = b'\xff\xd9'
     cr2_marker = b'\xff\xd8\xff\xc4'
+    nef_marker = b'\xff\xd9\x00\x00\x00\x00'
 
-    # Find the position of the CR2 marker
-    cr2_marker_position = raw_data.rfind(cr2_marker)
+    # Determine if the file is CR2 or NEF based on the presence of markers
+    is_cr2 = cr2_marker in raw_data
+    is_nef = nef_marker in raw_data
+
+    if is_cr2:
+        marker_position = raw_data.rfind(cr2_marker)
+    elif is_nef:
+        marker_position = raw_data.rfind(nef_marker)
+    else:
+        marker_position = -1
 
     # Find all start and end markers
     start_positions = []
@@ -158,8 +167,8 @@ def extract_jpeg_from_raw(raw_file_path, repaired_folder):
         end_positions.append(pos + 2)  # Include end_marker length in position
         pos = raw_data.find(end_marker, pos + 2)
 
-    if not start_positions or not end_positions:
-        print(f"No JPEG markers found in '{raw_file_path}'.")
+    if not start_positions:
+        print(f"No JPEG start markers found in '{raw_file_path}'.")
         return
 
     # Use rfind to locate the last valid JPEG segment
@@ -167,21 +176,27 @@ def extract_jpeg_from_raw(raw_file_path, repaired_folder):
     last_end = None
 
     for start_index in reversed(start_positions):
-        for end_index in reversed(end_positions):
-            if end_index > start_index:
-                if cr2_marker_position == -1 or end_index <= cr2_marker_position:
-                    last_start = start_index
-                    last_end = end_index
-                    break
-                elif end_index > cr2_marker_position:
-                    last_end = cr2_marker_position
-                    last_start = raw_data.rfind(start_marker, 0, cr2_marker_position)
-                    break
-        if last_start and last_end:
-            break
+        # Find the last end marker that comes after the current start marker
+        end_index = next((end for end in reversed(end_positions) if end > start_index), None)
+
+        if end_index:
+            if is_cr2 and marker_position != -1 and end_index > marker_position:
+                last_end = marker_position
+                last_start = raw_data.rfind(start_marker, 0, marker_position)
+                break
+            else:
+                last_start = start_index
+                last_end = end_index
+                break
+        elif is_nef:
+            # Handle NEF files where `FFD9` might be missing
+            if end_index is None:
+                last_start = start_index
+                last_end = len(raw_data)
+                break
 
     # Validate and extract data if both markers were found
-    if last_start is not None and last_end is not None:
+    if last_start is not None:
         # Extract the JPEG data
         jpeg_data = raw_data[last_start:last_end]
 
