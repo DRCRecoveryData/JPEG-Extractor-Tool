@@ -1,6 +1,6 @@
 import sys
 import os
-import concurrent.futures
+import re
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QLineEdit, QFileDialog, QProgressBar, QTextEdit, QMessageBox
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
@@ -80,11 +80,9 @@ class JPEGRepairApp(QWidget):
             self.show_message("Error", "RAW folder does not exist.")
             return
 
-        # Create the Extracted Folder if it doesn't exist
         if not os.path.exists(repaired_folder_path):
             os.makedirs(repaired_folder_path)
 
-        # Create the JPEG extraction worker and start the extraction process
         self.worker = JPEGExtractionWorker(raw_folder_path, repaired_folder_path)
         self.worker.progress_updated.connect(self.update_progress)
         self.worker.log_updated.connect(self.update_log)
@@ -119,6 +117,10 @@ class JPEGExtractionWorker(QThread):
                  file.lower().endswith((".arw", ".cr2", ".cr3", ".nef", ".jpg"))]
 
         total_files = len(files)
+        if total_files == 0:
+            self.extraction_finished.emit("No valid RAW files found.")
+            return
+
         files_processed = 0
 
         for file in files:
@@ -127,90 +129,60 @@ class JPEGExtractionWorker(QThread):
             extract_jpeg_from_raw(file, self.repaired_folder_path)
             self.log_updated.emit(f"{file_name} extracted.")
             files_processed += 1
-            progress = (files_processed / total_files) * 100
+            progress = int((files_processed / total_files) * 100)
             self.progress_updated.emit(progress)
 
         self.extraction_finished.emit("JPEG extraction process completed.")
+
 
 def extract_jpeg_from_raw(raw_file_path, repaired_folder):
     with open(raw_file_path, 'rb') as raw_file:
         raw_data = raw_file.read()
 
-    # Define markers for CR2 and NEF
-    start_marker = b'\xff\xd8'
-    end_marker = b'\xff\xd9'
-    cr2_marker = b'\xff\xd8\xff\xc4'
-    nef_marker = b'\xff\xd9\x00\x00\x00\x00'
+    # Updated regex patterns to detect valid JPEG headers
+    pattern_1 = re.compile(rb"\xFF\xD8\xFF[\xE0-\xEF].{2}Exif")  # Standard EXIF header
+    pattern_2 = re.compile(rb"\xFF\xD8\xFF\xDB.{4,8}")  # General JPEG DQT marker (for ARW, CR3)
 
-    # Determine if the file is CR2 or NEF based on the presence of markers
-    is_cr2 = cr2_marker in raw_data
-    is_nef = nef_marker in raw_data
-
-    if is_cr2:
-        marker_position = raw_data.rfind(cr2_marker)
-    elif is_nef:
-        marker_position = raw_data.rfind(nef_marker)
-    else:
-        marker_position = -1
-
-    # Find all start and end markers
     start_positions = []
-    end_positions = []
+    for match in pattern_1.finditer(raw_data):
+        start_positions.append(match.start())
 
-    pos = raw_data.find(start_marker)
-    while pos != -1:
-        start_positions.append(pos)
-        pos = raw_data.find(start_marker, pos + 2)
-
-    pos = raw_data.find(end_marker)
-    while pos != -1:
-        end_positions.append(pos + 2)  # Include end_marker length in position
-        pos = raw_data.find(end_marker, pos + 2)
+    for match in pattern_2.finditer(raw_data):
+        start_positions.append(match.start())
 
     if not start_positions:
-        print(f"No JPEG start markers found in '{raw_file_path}'.")
+        print(f"No valid JPEG start markers found in '{raw_file_path}'.")
         return
 
-    # Use rfind to locate the last valid JPEG segment
-    last_start = None
-    last_end = None
+    start_positions.sort()
 
+    end_positions = []
+    pos = raw_data.find(b'\xFF\xD9')
+    while pos != -1:
+        end_positions.append(pos + 2)  # Include \xFF\xD9
+        pos = raw_data.find(b'\xFF\xD9', pos + 2)
+
+    last_start, last_end = None, None
     for start_index in reversed(start_positions):
-        # Find the last end marker that comes after the current start marker
         end_index = next((end for end in reversed(end_positions) if end > start_index), None)
-
         if end_index:
-            if is_cr2 and marker_position != -1 and end_index > marker_position:
-                last_end = marker_position
-                last_start = raw_data.rfind(start_marker, 0, marker_position)
-                break
-            else:
-                last_start = start_index
-                last_end = end_index
-                break
-        elif is_nef:
-            # Handle NEF files where `FFD9` might be missing
-            if end_index is None:
-                last_start = start_index
-                last_end = len(raw_data)
-                break
+            last_start = start_index
+            last_end = end_index
+            break
 
-    # Validate and extract data if both markers were found
-    if last_start is not None:
-        # Extract the JPEG data
+    if last_start is not None and last_end is not None:
         jpeg_data = raw_data[last_start:last_end]
 
-        # Define filename for the extracted JPEG
-        raw_file_name, _ = os.path.splitext(os.path.basename(raw_file_path))
-        base_file_name = raw_file_name.split('.')[0]
-        jpeg_file_path = os.path.join(repaired_folder, f"{base_file_name}.JPG")
+        raw_file_name = os.path.splitext(os.path.basename(raw_file_path))[0]
+        jpeg_file_path = os.path.join(repaired_folder, f"{raw_file_name}.JPG")
 
         with open(jpeg_file_path, 'wb') as jpeg_file:
             jpeg_file.write(jpeg_data)
 
-        print(f"JPEG data extracted from '{raw_file_path}' and saved to '{jpeg_file_path}'.")
+        print(f"Extracted JPEG saved to '{jpeg_file_path}'.")
     else:
-        print(f"No valid JPEG data found in '{raw_file_path}'.")
+        print(f"Failed to extract valid JPEG from '{raw_file_path}'.")
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
