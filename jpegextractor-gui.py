@@ -1,8 +1,12 @@
 import sys
 import os
 import re
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QLineEdit, QFileDialog, QProgressBar, QTextEdit, QMessageBox
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QPushButton, QLabel,
+    QLineEdit, QFileDialog, QProgressBar, QTextEdit, QMessageBox
+)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+
 
 class JPEGRepairApp(QWidget):
     def __init__(self):
@@ -113,8 +117,8 @@ class JPEGExtractionWorker(QThread):
         self.repaired_folder_path = repaired_folder_path
 
     def run(self):
-        files = [os.path.join(self.raw_folder_path, file) for file in os.listdir(self.raw_folder_path) if
-                 file.lower().endswith((".arw", ".cr2", ".cr3", ".nef", ".jpg"))]
+        files = [os.path.join(self.raw_folder_path, file) for file in os.listdir(self.raw_folder_path)
+                 if file.lower().endswith((".arw", ".cr2", ".cr3", ".nef", ".jpg"))]
 
         total_files = len(files)
         if total_files == 0:
@@ -126,8 +130,8 @@ class JPEGExtractionWorker(QThread):
         for file in files:
             file_name = os.path.basename(file)
             self.log_updated.emit(f"Processing {file_name}...")
-            extract_jpeg_from_raw(file, self.repaired_folder_path)
-            self.log_updated.emit(f"{file_name} extracted.")
+            extract_jpeg_from_raw(file, self.repaired_folder_path, self.log_updated.emit)
+            self.log_updated.emit(f"{file_name} extraction attempt complete.")
             files_processed += 1
             progress = int((files_processed / total_files) * 100)
             self.progress_updated.emit(progress)
@@ -135,26 +139,30 @@ class JPEGExtractionWorker(QThread):
         self.extraction_finished.emit("JPEG extraction process completed.")
 
 
-def extract_jpeg_from_raw(raw_file_path, repaired_folder):
-    with open(raw_file_path, 'rb') as raw_file:
-        raw_data = raw_file.read()
-
-    # Updated regex patterns to detect valid JPEG headers
-    pattern_1 = re.compile(rb"\xFF\xD8\xFF[\xE0-\xEF].{2}Exif")  # Standard EXIF header
-    pattern_2 = re.compile(rb"\xFF\xD8\xFF\xDB.{4,8}")  # General JPEG DQT marker (for ARW, CR3)
-
-    start_positions = []
-    for match in pattern_1.finditer(raw_data):
-        start_positions.append(match.start())
-
-    for match in pattern_2.finditer(raw_data):
-        start_positions.append(match.start())
-
-    if not start_positions:
-        print(f"No valid JPEG start markers found in '{raw_file_path}'.")
+def extract_jpeg_from_raw(raw_file_path, repaired_folder, log_callback=None):
+    try:
+        with open(raw_file_path, 'rb') as raw_file:
+            raw_data = raw_file.read()
+    except Exception as e:
+        msg = f"Failed to read file '{raw_file_path}': {e}"
+        print(msg)
+        if log_callback:
+            log_callback(msg)
         return
 
+    pattern_1 = re.compile(rb"\xFF\xD8\xFF[\xE0-\xEF].{2}Exif")  # Standard EXIF header
+    pattern_2 = re.compile(rb"\xFF\xD8\xFF\xDB.{4,8}")  # General JPEG DQT marker
+
+    start_positions = [m.start() for m in pattern_1.finditer(raw_data)]
+    start_positions += [m.start() for m in pattern_2.finditer(raw_data)]
     start_positions.sort()
+
+    if not start_positions:
+        msg = f"No valid JPEG start markers found in '{raw_file_path}'."
+        print(msg)
+        if log_callback:
+            log_callback(msg)
+        return
 
     end_positions = []
     pos = raw_data.find(b'\xFF\xD9')
@@ -176,12 +184,20 @@ def extract_jpeg_from_raw(raw_file_path, repaired_folder):
         raw_file_name = os.path.splitext(os.path.basename(raw_file_path))[0]
         jpeg_file_path = os.path.join(repaired_folder, f"{raw_file_name}.JPG")
 
-        with open(jpeg_file_path, 'wb') as jpeg_file:
-            jpeg_file.write(jpeg_data)
-
-        print(f"Extracted JPEG saved to '{jpeg_file_path}'.")
+        try:
+            with open(jpeg_file_path, 'wb') as jpeg_file:
+                jpeg_file.write(jpeg_data)
+            msg = f"Extracted JPEG saved to '{jpeg_file_path}'."
+        except Exception as e:
+            msg = f"Failed to save JPEG for '{raw_file_path}': {e}"
+        print(msg)
+        if log_callback:
+            log_callback(msg)
     else:
-        print(f"Failed to extract valid JPEG from '{raw_file_path}'.")
+        msg = f"Failed to extract valid JPEG from '{raw_file_path}'."
+        print(msg)
+        if log_callback:
+            log_callback(msg)
 
 
 if __name__ == '__main__':
