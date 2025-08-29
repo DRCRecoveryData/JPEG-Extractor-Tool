@@ -150,9 +150,10 @@ def extract_jpeg_from_raw(raw_file_path, repaired_folder, log_callback=None):
             log_callback(msg)
         return
 
-    pattern_1 = re.compile(rb"\xFF\xD8\xFF[\xE0-\xEF].{2}Exif")  # Standard EXIF header
-    pattern_2 = re.compile(rb"\xFF\xD8\xFF\xDB.{4,8}")  # General JPEG DQT marker
-
+    pattern_1_exif = re.compile(rb"\xFF\xD8\xFF\xE1.{2}Exif")  # Standard EXIF header
+    pattern_1_jfif = re.compile(rb"\xFF\xD8\xFF\xE0.{2}JFIF")  # Standard JFIF header
+    pattern_2 = re.compile(rb"\xFF\xD8\xFF\xDB.{4,8}")         # General JPEG DQT marker
+    
     start_positions = [m.start() for m in pattern_1.finditer(raw_data)]
     start_positions += [m.start() for m in pattern_2.finditer(raw_data)]
     start_positions.sort()
