@@ -118,7 +118,7 @@ class JPEGExtractionWorker(QThread):
 
     def run(self):
         files = [os.path.join(self.raw_folder_path, file) for file in os.listdir(self.raw_folder_path)
-                 if file.lower().endswith((".arw", ".cr2", ".cr3", ".nef", ".jpg"))]
+                 if file.lower().endswith(("",)):
 
         total_files = len(files)
         if total_files == 0:
